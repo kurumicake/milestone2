@@ -1,687 +1,122 @@
 const fs = require("fs/promises");
+const { createReadStream } = require("fs");
 const { DEFAULT_HEADER } = require("./util/util");
 const path = require("path");
-var qs = require("querystring");
+const qs = require("querystring");
+const ejs = require('ejs');
+const formidable = require('formidable');
+const util = require('./util/util');
 
 const controller = {
-  getHomePage: async (request, response) => {
-    const database = await fs.readFile("database/data.json");
-    const usersArr = JSON.parse(database);
+    getFeedCSS: async (request, response) => {
+        response.writeHead(200, { "Content-Type": "text/css" });
+        createReadStream(path.join(__dirname, "views", "feed.css")).pipe(response);
+    },
+    getCSS: async (request, response) => {
+        response.writeHead(200, { "Content-Type": "text/css" });
+        createReadStream(path.join(__dirname, "views", "homepage.css")).pipe(response);
+    },
+    getHomePage: async (request, response) => {
+        const database = await fs.readFile("database/data.json", "utf8");
+        const usersArr = JSON.parse(database);
+        const homepageHTML = path.join(__dirname, "views", "homepage.ejs");
+        const html = await ejs.renderFile(homepageHTML, { users: usersArr });
+        response.writeHead(200, { "Content-Type": "text/html" }); // Correct content type for HTML
+        response.end(html);
+    },
+    sendFormData: (request, response) => {
+        //where the choose image would be
+
+        let body = "";
+
+        request.on("data", function (data) {
+            body += data;
+        });
+
+        request.on("end", function () {
+            let post = qs.parse(body);
+            console.log(post);
+        });
+    },
+    getFile: async (request, response) => {
+        const filePath = path.join(__dirname, request.url.replace(/^\/src\//, ''));
+        const stream = createReadStream(filePath);
+
+        stream.on('error', (error) => {
+            if (error.code === 'ENOENT') {
+                util.pageNotFound(response)
+            } else {
+                util.internalServerError(response,error)
+            }
+        });
+        stream.pipe(response);
+    },
+    getFeed: async (request, response) => {
+        try {
+            const database = await fs.readFile("database/data.json", "utf8");
+            const usersArr = JSON.parse(database);
+
+            const url = new URL(request.url, `http://${request.headers.host}`);
+            const username = url.searchParams.get('username');
+            const user = usersArr.find(user => user.username === username);
+
+            if (user) {
+                const feedPath = path.join(__dirname, 'views', 'feed.ejs');
+                const feed = await fs.readFile(feedPath, 'utf8');
+                const userInfo = usersArr.find((user) => user.username === username);
+
+                if (userInfo !== null) {
+                    const renderedHtml = ejs.render(feed, { userInfo: user });
+                    user.stats = userInfo;
+                    response.setHeader("Content-Type", "text/html");
+                    response.end(renderedHtml);
+                } else {
+                    response.writeHead(404, { "Content-Type": "text/plain" });
+                    response.end("Instagram user info not found");
+                }
+            } 
+        } catch (error) {
+            console.error("Error:", error);
+            response.writeHead(500, { "Content-Type": "text/plain" });
+            response.end("Internal Server Error");
+        }
+    },
+    uploadImages: (request, response) => {
+        const form = new formidable.IncomingForm();
+        form.keepExtensions = true; // Keep file extensions
+        form.uploadDir = path.join(__dirname, 'uploads'); // Directory to save uploaded files
     
-    return response.end(`
-        //* my html code read database and somehow loop the user object until the end
-    `);
-  },
-  sendFormData: (request, response) => {
-    var body = "";
-
-    request.on("data", function (data) {
-      body += data;
-    });
-
-    request.on("end", function () {
-      var post = qs.parse(body);
-      console.log(post);
-    });
-  },
-
-  getFeed: (request, response) => {
-    // console.log(request.url); try: http://localhost:3000/feed?username=john123
-    response.write(`
-    <html>
-    <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600"><link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.2.0/css/all.css">
-    <style>
-
-    /* Base Styles */
-
-    :root {
-        font-size: 10px;
-    }
-
-    *,
-    *::before,
-    *::after {
-        box-sizing: border-box;
-    }
-
-    body {
-        font-family: "Open Sans", Arial, sans-serif;
-        min-height: 100vh;
-        background-color: #fafafa;
-        color: #262626;
-        padding-bottom: 3rem;
-    }
-
-    img {
-        display: block;
-    }
-
-    .container {
-        max-width: 93.5rem;
-        margin: 0 auto;
-        padding: 0 2rem;
-    }
-
-    .btn {
-        display: inline-block;
-        font: inherit;
-        background: none;
-        border: none;
-        color: inherit;
-        padding: 0;
-        cursor: pointer;
-    }
-
-    .btn:focus {
-        outline: 0.5rem auto #4d90fe;
-    }
-
-    .visually-hidden {
-        position: absolute !important;
-        height: 1px;
-        width: 1px;
-        overflow: hidden;
-        clip: rect(1px, 1px, 1px, 1px);
-    }
-
-    /* Profile Section */
-
-    .profile {
-        padding: 5rem 0;
-    }
-
-    .profile::after {
-        content: "";
-        display: block;
-        clear: both;
-    }
-
-    .profile-image {
-        float: left;
-        width: calc(33.333% - 1rem);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin-right: 3rem;
-    }
-
-    .profile-image img {
-        border-radius: 50%;
-    }
-
-    .profile-user-settings,
-    .profile-stats,
-    .profile-bio {
-        float: left;
-        width: calc(66.666% - 2rem);
-    }
-
-    .profile-user-settings {
-        margin-top: 1.1rem;
-    }
-
-    .profile-user-name {
-        display: inline-block;
-        font-size: 3.2rem;
-        font-weight: 300;
-    }
-
-    .profile-edit-btn {
-        font-size: 1.4rem;
-        line-height: 1.8;
-        border: 0.1rem solid #dbdbdb;
-        border-radius: 0.3rem;
-        padding: 0 2.4rem;
-        margin-left: 2rem;
-    }
-
-    .profile-settings-btn {
-        font-size: 2rem;
-        margin-left: 1rem;
-    }
-
-    .profile-stats {
-        margin-top: 2.3rem;
-    }
-
-    .profile-stats li {
-        display: inline-block;
-        font-size: 1.6rem;
-        line-height: 1.5;
-        margin-right: 4rem;
-        cursor: pointer;
-    }
-
-    .profile-stats li:last-of-type {
-        margin-right: 0;
-    }
-
-    .profile-bio {
-        font-size: 1.6rem;
-        font-weight: 400;
-        line-height: 1.5;
-        margin-top: 2.3rem;
-    }
-
-    .profile-real-name,
-    .profile-stat-count,
-    .profile-edit-btn {
-        font-weight: 600;
-    }
-
-    /* Gallery Section */
-
-    .gallery {
-        display: flex;
-        flex-wrap: wrap;
-        margin: -1rem -1rem;
-        padding-bottom: 3rem;
-    }
-
-    .gallery-item {
-        position: relative;
-        flex: 1 0 22rem;
-        margin: 1rem;
-        color: #fff;
-        cursor: pointer;
-    }
-
-    .gallery-item:hover .gallery-item-info,
-    .gallery-item:focus .gallery-item-info {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        position: absolute;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0, 0, 0, 0.3);
-    }
-
-    .gallery-item-info {
-        display: none;
-    }
-
-    .gallery-item-info li {
-        display: inline-block;
-        font-size: 1.7rem;
-        font-weight: 600;
-    }
-
-    .gallery-item-likes {
-        margin-right: 2.2rem;
-    }
-
-    .gallery-item-type {
-        position: absolute;
-        top: 1rem;
-        right: 1rem;
-        font-size: 2.5rem;
-        text-shadow: 0.2rem 0.2rem 0.2rem rgba(0, 0, 0, 0.1);
-    }
-
-    .fa-clone,
-    .fa-comment {
-        transform: rotateY(180deg);
-    }
-
-    .gallery-image {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    /* Loader */
-
-    .loader {
-        width: 5rem;
-        height: 5rem;
-        border: 0.6rem solid #999;
-        border-bottom-color: transparent;
-        border-radius: 50%;
-        margin: 0 auto;
-        animation: loader 500ms linear infinite;
-    }
-
-    /* Media Query */
-
-    @media screen and (max-width: 40rem) {
-        .profile {
-            display: flex;
-            flex-wrap: wrap;
-            padding: 4rem 0;
-        }
-
-        .profile::after {
-            display: none;
-        }
-
-        .profile-image,
-        .profile-user-settings,
-        .profile-bio,
-        .profile-stats {
-            float: none;
-            width: auto;
-        }
-
-        .profile-image img {
-            width: 7.7rem;
-        }
-
-        .profile-user-settings {
-            flex-basis: calc(100% - 10.7rem);
-            display: flex;
-            flex-wrap: wrap;
-            margin-top: 1rem;
-        }
-
-        .profile-user-name {
-            font-size: 2.2rem;
-        }
-
-        .profile-edit-btn {
-            order: 1;
-            padding: 0;
-            text-align: center;
-            margin-top: 1rem;
-        }
-
-        .profile-edit-btn {
-            margin-left: 0;
-        }
-
-        .profile-bio {
-            font-size: 1.4rem;
-            margin-top: 1.5rem;
-        }
-
-        .profile-edit-btn,
-        .profile-bio,
-        .profile-stats {
-            flex-basis: 100%;
-        }
-
-        .profile-stats {
-            order: 1;
-            margin-top: 1.5rem;
-        }
-
-        .profile-stats ul {
-            display: flex;
-            text-align: center;
-            padding: 1.2rem 0;
-            border-top: 0.1rem solid #dadada;
-            border-bottom: 0.1rem solid #dadada;
-        }
-
-        .profile-stats li {
-            font-size: 1.4rem;
-            flex: 1;
-            margin: 0;
-        }
-
-        .profile-stat-count {
-            display: block;
-        }
-    }
-
-    /* Spinner Animation */
-
-    @keyframes loader {
-        to {
-            transform: rotate(360deg);
-        }
-    }
-
-    @supports (display: grid) {
-        .profile {
-            display: grid;
-            grid-template-columns: 1fr 2fr;
-            grid-template-rows: repeat(3, auto);
-            grid-column-gap: 3rem;
-            align-items: center;
-        }
-
-        .profile-image {
-            grid-row: 1 / -1;
-        }
-
-        .gallery {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
-            grid-gap: 2rem;
-        }
-
-        .profile-image,
-        .profile-user-settings,
-        .profile-stats,
-        .profile-bio,
-        .gallery-item,
-        .gallery {
-            width: auto;
-            margin: 0;
-        }
-
-        @media (max-width: 40rem) {
-            .profile {
-                grid-template-columns: auto 1fr;
-                grid-row-gap: 1.5rem;
+        form.parse(request, async (err, fields, files) => {
+            console.log("hello")
+            if (err) {
+                console.error('Error during form parsing', err);
+                response.writeHead(500, { 'Content-Type': 'text/plain' });
+                response.end('Error processing upload');
+                return;
             }
-
-            .profile-image {
-                grid-row: 1 / 2;
+    
+            const username = fields.username;
+            const uploadedFile = files.image;
+            
+            // Define the new path for the uploaded file
+            const newFilePath = path.join(__dirname, 'uploads', `${username}-${uploadedFile.name}`);
+            console.log(newFilePath);
+    
+            try {
+                // Move the file from the temporary location to the new location
+                await fs.rename(uploadedFile.filepath, newFilePath);
+    
+                // Respond to the client after successful upload
+                response.writeHead(302, { 'Location': '/success' }); // Redirect to a success page
+                response.end('File uploaded successfully');
+            } catch (error) {
+                console.error('Error handling the file:', error);
+                response.writeHead(500, { 'Content-Type': 'text/plain' });
+                response.end('Error handling file after upload');
             }
-
-            .profile-user-settings {
-                display: grid;
-                grid-template-columns: auto 1fr;
-                grid-gap: 1rem;
-            }
-
-            .profile-edit-btn,
-            .profile-stats,
-            .profile-bio {
-                grid-column: 1 / -1;
-            }
-
-            .profile-user-settings,
-            .profile-edit-btn,
-            .profile-settings-btn,
-            .profile-bio,
-            .profile-stats {
-                margin: 0;
-            }
-        }
+        });
     }
-    </style>
-
-    </head>
-    <body>
-    <header>
-
-	<div class="container">
-
-		<div class="profile">
-
-			<div class="profile-image">
-
-				<img src="https://images.unsplash.com/photo-1513721032312-6a18a42c8763?w=152&h=152&fit=crop&crop=faces" alt="">
-
-			</div>
-
-			<div class="profile-user-settings">
-
-				<h1 class="profile-user-name">janedoe_</h1>
-
-				<button class="btn profile-edit-btn">Edit Profile</button>
-
-				<button class="btn profile-settings-btn" aria-label="profile settings"><i class="fas fa-cog" aria-hidden="true"></i></button>
-
-			</div>
-
-			<div class="profile-stats">
-
-				<ul>
-					<li><span class="profile-stat-count">164</span> posts</li>
-					<li><span class="profile-stat-count">188</span> followers</li>
-					<li><span class="profile-stat-count">206</span> following</li>
-				</ul>
-
-			</div>
-
-			<div class="profile-bio">
-
-				<p><span class="profile-real-name">Jane Doe</span> Lorem ipsum dolor sit, amet consectetur adipisicing elit</p>
-
-			</div>
-
-		</div>
-		<!-- End of profile section -->
-
-	</div>
-	<!-- End of container -->
-
-</header>
-
-<main>
-
-	<div class="container">
-
-		<div class="gallery">
-
-			<div class="gallery-item" tabindex="0">
-
-				<img src="https://images.unsplash.com/photo-1497445462247-4330a224fdb1?w=500&h=500&fit=crop" class="gallery-image" alt="">
-
-				<div class="gallery-item-info">
-
-					<ul>
-						<li class="gallery-item-likes"><span class="visually-hidden">Likes:</span><i class="fas fa-heart" aria-hidden="true"></i> 56</li>
-						<li class="gallery-item-comments"><span class="visually-hidden">Comments:</span><i class="fas fa-comment" aria-hidden="true"></i> 2</li>
-					</ul>
-
-				</div>
-
-			</div>
-
-			<div class="gallery-item" tabindex="0">
-
-				<img src="https://images.unsplash.com/photo-1497445462247-4330a224fdb1?w=500&h=500&fit=crop" class="gallery-image" alt="">
-
-				<div class="gallery-item-info">
-
-					<ul>
-						<li class="gallery-item-likes"><span class="visually-hidden">Likes:</span><i class="fas fa-heart" aria-hidden="true"></i> 89</li>
-						<li class="gallery-item-comments"><span class="visually-hidden">Comments:</span><i class="fas fa-comment" aria-hidden="true"></i> 5</li>
-					</ul>
-
-				</div>
-
-			</div>
-
-			<div class="gallery-item" tabindex="0">
-
-				<img src="https://images.unsplash.com/photo-1426604966848-d7adac402bff?w=500&h=500&fit=crop" class="gallery-image" alt="">
-
-				<div class="gallery-item-type">
-
-					<span class="visually-hidden">Gallery</span><i class="fas fa-clone" aria-hidden="true"></i>
-
-				</div>
-
-				<div class="gallery-item-info">
-
-					<ul>
-						<li class="gallery-item-likes"><span class="visually-hidden">Likes:</span><i class="fas fa-heart" aria-hidden="true"></i> 42</li>
-						<li class="gallery-item-comments"><span class="visually-hidden">Comments:</span><i class="fas fa-comment" aria-hidden="true"></i> 1</li>
-					</ul>
-
-				</div>
-
-			</div>
-
-			<div class="gallery-item" tabindex="0">
-
-				<img src="https://images.unsplash.com/photo-1502630859934-b3b41d18206c?w=500&h=500&fit=crop" class="gallery-image" alt="">
-
-				<div class="gallery-item-type">
-
-					<span class="visually-hidden">Video</span><i class="fas fa-video" aria-hidden="true"></i>
-
-				</div>
-
-				<div class="gallery-item-info">
-
-					<ul>
-						<li class="gallery-item-likes"><span class="visually-hidden">Likes:</span><i class="fas fa-heart" aria-hidden="true"></i> 38</li>
-						<li class="gallery-item-comments"><span class="visually-hidden">Comments:</span><i class="fas fa-comment" aria-hidden="true"></i> 0</li>
-					</ul>
-
-				</div>
-
-			</div>
-
-			<div class="gallery-item" tabindex="0">
-
-				<img src="https://images.unsplash.com/photo-1498471731312-b6d2b8280c61?w=500&h=500&fit=crop" class="gallery-image" alt="">
-
-				<div class="gallery-item-type">
-
-					<span class="visually-hidden">Gallery</span><i class="fas fa-clone" aria-hidden="true"></i>
-
-				</div>
-
-				<div class="gallery-item-info">
-
-					<ul>
-						<li class="gallery-item-likes"><span class="visually-hidden">Likes:</span><i class="fas fa-heart" aria-hidden="true"></i> 47</li>
-						<li class="gallery-item-comments"><span class="visually-hidden">Comments:</span><i class="fas fa-comment" aria-hidden="true"></i> 1</li>
-					</ul>
-
-				</div>
-
-			</div>
-
-			<div class="gallery-item" tabindex="0">
-
-				<img src="https://images.unsplash.com/photo-1515023115689-589c33041d3c?w=500&h=500&fit=crop" class="gallery-image" alt="">
-
-				<div class="gallery-item-info">
-
-					<ul>
-						<li class="gallery-item-likes"><span class="visually-hidden">Likes:</span><i class="fas fa-heart" aria-hidden="true"></i> 94</li>
-						<li class="gallery-item-comments"><span class="visually-hidden">Comments:</span><i class="fas fa-comment" aria-hidden="true"></i> 3</li>
-					</ul>
-
-				</div>
-
-			</div>
-
-			<div class="gallery-item" tabindex="0">
-
-				<img src="https://images.unsplash.com/photo-1504214208698-ea1916a2195a?w=500&h=500&fit=crop" class="gallery-image" alt="">
-
-				<div class="gallery-item-type">
-
-					<span class="visually-hidden">Gallery</span><i class="fas fa-clone" aria-hidden="true"></i>
-
-				</div>
-
-				<div class="gallery-item-info">
-
-					<ul>
-						<li class="gallery-item-likes"><span class="visually-hidden">Likes:</span><i class="fas fa-heart" aria-hidden="true"></i> 52</li>
-						<li class="gallery-item-comments"><span class="visually-hidden">Comments:</span><i class="fas fa-comment" aria-hidden="true"></i> 4</li>
-					</ul>
-
-				</div>
-
-			</div>
-
-			<div class="gallery-item" tabindex="0">
-
-				<img src="https://images.unsplash.com/photo-1515814472071-4d632dbc5d4a?w=500&h=500&fit=crop" class="gallery-image" alt="">
-
-				<div class="gallery-item-info">
-
-					<ul>
-						<li class="gallery-item-likes"><span class="visually-hidden">Likes:</span><i class="fas fa-heart" aria-hidden="true"></i> 66</li>
-						<li class="gallery-item-comments"><span class="visually-hidden">Comments:</span><i class="fas fa-comment" aria-hidden="true"></i> 2</li>
-					</ul>
-
-				</div>
-
-			</div>
-
-			<div class="gallery-item" tabindex="0">
-
-				<img src="https://images.unsplash.com/photo-1511407397940-d57f68e81203?w=500&h=500&fit=crop" class="gallery-image" alt="">
-
-				<div class="gallery-item-type">
-
-					<span class="visually-hidden">Gallery</span><i class="fas fa-clone" aria-hidden="true"></i>
-
-				</div>
-
-				<div class="gallery-item-info">
-
-					<ul>
-						<li class="gallery-item-likes"><span class="visually-hidden">Likes:</span><i class="fas fa-heart" aria-hidden="true"></i> 45</li>
-						<li class="gallery-item-comments"><span class="visually-hidden">Comments:</span><i class="fas fa-comment" aria-hidden="true"></i> 0</li>
-					</ul>
-
-				</div>
-
-			</div>
-
-			<div class="gallery-item" tabindex="0">
-
-				<img src="https://images.unsplash.com/photo-1518481612222-68bbe828ecd1?w=500&h=500&fit=crop" class="gallery-image" alt="">
-
-				<div class="gallery-item-info">
-
-					<ul>
-						<li class="gallery-item-likes"><span class="visually-hidden">Likes:</span><i class="fas fa-heart" aria-hidden="true"></i> 34</li>
-						<li class="gallery-item-comments"><span class="visually-hidden">Comments:</span><i class="fas fa-comment" aria-hidden="true"></i> 1</li>
-					</ul>
-
-				</div>
-
-			</div>
-
-			<div class="gallery-item" tabindex="0">
-
-				<img src="https://images.unsplash.com/photo-1505058707965-09a4469a87e4?w=500&h=500&fit=crop" class="gallery-image" alt="">
-
-				<div class="gallery-item-info">
-
-					<ul>
-						<li class="gallery-item-likes"><span class="visually-hidden">Likes:</span><i class="fas fa-heart" aria-hidden="true"></i> 41</li>
-						<li class="gallery-item-comments"><span class="visually-hidden">Comments:</span><i class="fas fa-comment" aria-hidden="true"></i> 0</li>
-					</ul>
-
-				</div>
-
-			</div>
-
-			<div class="gallery-item" tabindex="0">
-
-				<img src="https://images.unsplash.com/photo-1423012373122-fff0a5d28cc9?w=500&h=500&fit=crop" class="gallery-image" alt="">
-
-				<div class="gallery-item-type">
-
-					<span class="visually-hidden">Video</span><i class="fas fa-video" aria-hidden="true"></i>
-
-				</div>
-
-				<div class="gallery-item-info">
-
-					<ul>
-						<li class="gallery-item-likes"><span class="visually-hidden">Likes:</span><i class="fas fa-heart" aria-hidden="true"></i> 30</li>
-						<li class="gallery-item-comments"><span class="visually-hidden">Comments:</span><i class="fas fa-comment" aria-hidden="true"></i> 2</li>
-					</ul>
-
-				</div>
-
-			</div>
-
-		</div>
-		<!-- End of gallery -->
-
-		<div class="loader"></div>
-
-	</div>
-	<!-- End of container -->
-
-</main>
-</body>
-</html>
-    `);
-    response.end();
-  },
-
-  uploadImages: (request, response) => {},
-};
+}
 
 module.exports = controller;
+

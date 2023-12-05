@@ -1,0 +1,7 @@
+node_modules
+src/photos/*
+src/images/*
+src/uploads/*
+!src/images/.gitkeep
+!src/uploads/.gitkeep
+!src/photos/.gitkeep
