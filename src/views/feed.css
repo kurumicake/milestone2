@@ -10,6 +10,16 @@
         box-sizing: border-box;
       }
 
+      #logo {
+        height: 30px;
+        margin: 5px;
+      }
+      
+      .divider {
+        border-top: 1px solid #d9d9d9;
+        margin-top: 10px;
+      }
+
       body {
         font-family: "Open Sans", Arial, sans-serif;
         min-height: 100vh;
@@ -230,10 +240,6 @@
         .profile-stats {
           float: none;
           width: auto;
-        }
-
-        .profile-image img {
-          width: 7.7rem;
         }
 
         .profile-user-settings {

@@ -49,16 +49,13 @@ const handler = (request, response) => {
     const regex = new RegExp(`^${route.replace(/\*/g, '.*')}$`);
     return regex.test(`${pathname}:${method.toLowerCase()}`);
   });
-  
+
   const chosen = allRoutes[key] || allRoutes.default;
 
   return Promise.resolve(chosen(request, response)).catch(
     handlerError(response)
   );
 }
-
-
-
 
 const handlerError = (response) => {
   return (error) => {

@@ -4,7 +4,7 @@ const { DEFAULT_HEADER } = require("./util/util");
 const path = require("path");
 const qs = require("querystring");
 const ejs = require('ejs');
-const formidable = require('formidable');
+const { formidable } = require('formidable');
 const util = require('./util/util');
 
 const controller = {
@@ -25,8 +25,6 @@ const controller = {
         response.end(html);
     },
     sendFormData: (request, response) => {
-        //where the choose image would be
-
         let body = "";
 
         request.on("data", function (data) {
@@ -46,7 +44,7 @@ const controller = {
             if (error.code === 'ENOENT') {
                 util.pageNotFound(response)
             } else {
-                util.internalServerError(response,error)
+                util.internalServerError(response, error)
             }
         });
         stream.pipe(response);
@@ -74,47 +72,61 @@ const controller = {
                     response.writeHead(404, { "Content-Type": "text/plain" });
                     response.end("Instagram user info not found");
                 }
-            } 
+            }
         } catch (error) {
             console.error("Error:", error);
             response.writeHead(500, { "Content-Type": "text/plain" });
             response.end("Internal Server Error");
         }
     },
-    uploadImages: (request, response) => {
-        const form = new formidable.IncomingForm();
-        form.keepExtensions = true; // Keep file extensions
-        form.uploadDir = path.join(__dirname, 'uploads'); // Directory to save uploaded files
-    
+    uploadImages: async (request, response) => {
+        const uploadDir = path.join(__dirname, "uploads")
+        const form = formidable({ keepExtension: true, uploadDir: uploadDir});
         form.parse(request, async (err, fields, files) => {
-            console.log("hello")
+            //error handle
             if (err) {
                 console.error('Error during form parsing', err);
                 response.writeHead(500, { 'Content-Type': 'text/plain' });
                 response.end('Error processing upload');
                 return;
             }
-    
-            const username = fields.username;
-            const uploadedFile = files.image;
-            
-            // Define the new path for the uploaded file
-            const newFilePath = path.join(__dirname, 'uploads', `${username}-${uploadedFile.name}`);
-            console.log(newFilePath);
-    
             try {
-                // Move the file from the temporary location to the new location
-                await fs.rename(uploadedFile.filepath, newFilePath);
-    
-                // Respond to the client after successful upload
-                response.writeHead(302, { 'Location': '/success' }); // Redirect to a success page
-                response.end('File uploaded successfully');
-            } catch (error) {
-                console.error('Error handling the file:', error);
+                const username = fields.username[0];
+                console.log()
+                await processUpload(files, username);
+                response.writeHead(302, { location: "/" });
+                response.end();
+            } catch {
+                console.error('Error handling the file:', err);
                 response.writeHead(500, { 'Content-Type': 'text/plain' });
                 response.end('Error handling file after upload');
             }
-        });
+        })
+    }
+}
+//helper functions 
+
+const processUpload = async (files, username) => {
+    console.log(files)
+    const oldPath = files.image[0].filepath; 
+    const filename = files.image[0].originalFilename;
+    const newPath = path.join(__dirname, "photos", username, filename);
+
+    try {
+        await fs.rename(oldPath, newPath); // Move file to new location
+
+        // Update the data.json file
+        const database = await fs.readFile("database/data.json", "utf8");
+        const usersArr = JSON.parse(database);
+        const userInfo = usersArr.find(user => user.username === username);
+
+        if (userInfo) {
+            userInfo.photos.push(filename); // Add new photo
+            await fs.writeFile("database/data.json", JSON.stringify(usersArr, null, 2)); // Write back the updated array
+        }
+    } catch (err) {
+        console.error('Error in processUpload:', err);
+        throw err; 
     }
 }
 
